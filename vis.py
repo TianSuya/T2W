@@ -17,22 +17,21 @@ from copy import deepcopy
 import torch
 import torch.utils.data
 from torch.utils.data import DataLoader
-from Gpt.diffusion import create_diffusion
-from Gpt.diffusion.timestep_sampler import UniformSampler
+from T2W.diffusion import create_diffusion
+from T2W.diffusion.timestep_sampler import UniformSampler
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from pytorch_grad_cam.utils.image import show_cam_on_image
 import matplotlib.pyplot as plt
 from data_gen.cifar100.p_dataset import PDataset
-from Gpt.distributed import scaled_all_reduce
-from Gpt.models.transformer import Gpt
+from T2W.distributed import scaled_all_reduce
+from T2W.models.transformer import Gpt
 import joblib
-from Gpt.meters import TrainMeter, TestMeter
-from Gpt.utils import setup_env, construct_loader, shuffle, update_lr, spread_losses, accumulate, requires_grad
-from Gpt.distributed import get_rank, get_world_size, is_main_proc, synchronize
+from T2W.meters import TrainMeter, TestMeter
+from T2W.utils import setup_env, construct_loader, shuffle, update_lr, spread_losses, accumulate, requires_grad
+from T2W.distributed import get_rank, get_world_size, is_main_proc, synchronize
 # from Gpt.vis import VisMonitor
 # from Gpt.tasks import get
-from Gpt.download import find_model
 from data_gen.cifar100.generate_dataset import CLIPAdapter, CIFAR100Subset
 import numpy as np
 from matplotlib.colors import Normalize
@@ -48,11 +47,9 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 
 def flatten_tensor_list(tensor_list):
-    """将张量列表展平为单个向量"""
     return torch.cat([t.reshape(-1) for t in tensor_list])
 
 def reconstruct_tensor_list(flat_tensor, original_shapes):
-    """将展平的向量恢复为原始形状的张量列表"""
     tensor_list = []
     ptr = 0
     for shape in original_shapes:
@@ -63,57 +60,43 @@ def reconstruct_tensor_list(flat_tensor, original_shapes):
     return tensor_list
 
 def visualize_2d_loss_landscape(
-    model,              # 预训练模型（需要支持参数访问）
-    initial_params,     # 初始参数（θ0）
-    delta1,             # 优化方向1（θ1 - θ0）
-    delta2,             # 优化方向2（θ2 - θ0）
-    criterion,          # 损失函数
-    dataloader,         # 数据加载器
-    alpha_range=(-4, 4),# α范围
-    beta_range=(-4, 4), # β范围
-    num_points=40,      # 每个轴的采样点数
-    device='cuda',      # 计算设备
-    plot_type='3d',       # 新增绘图类型参数
-    cmap='viridis',       # 新增颜色映射参数
-    elevation=25,         # 3D视角仰角
-    azimuth=45,            # 3D视角方位角
+    model,              
+    initial_params,     
+    delta1,             
+    delta2,             
+    criterion,         
+    dataloader,      
+    alpha_range=(-4, 4),
+    beta_range=(-4, 4), 
+    num_points=40,      
+    device='cuda',     
+    plot_type='3d',       
+    cmap='viridis',       
+    elevation=25,         
+    azimuth=45,            
     save_name='test.png',
     data_path='data.pt'
 ):
-    """
-    绘制二维损失表面
     
-    参数说明：
-    - delta1：优化方向1（目标任务的参数变化量）
-    - delta2：优化方向2（其他任务的参数变化量）
-    - 返回值：网格化的损失值矩阵
-    """
-    
-    # 确保模型参数与初始参数一致
     with torch.no_grad():
         for (name, param), init_val in zip(model.named_parameters(), initial_params):
             param.copy_(init_val)
     
     original_shapes = [t.shape for t in delta1]
     
-    # 将张量列表展平为向量
     delta1_flat = flatten_tensor_list(delta1)
     delta2_flat = flatten_tensor_list(delta2)
     
-    # 归一化处理（关键修正）
     delta1_norm = torch.norm(delta1_flat)
     delta2_flat = delta2_flat * (delta1_norm / torch.norm(delta2_flat))
     
-    # 重建为原始形状的张量列表
     delta1 = reconstruct_tensor_list(delta1_flat, original_shapes)
     delta2 = reconstruct_tensor_list(delta2_flat, original_shapes)
     
-    # 创建参数网格
     alpha_vals = np.linspace(*alpha_range, num_points)
     beta_vals = np.linspace(*beta_range, num_points)
     loss_grid = np.zeros((len(alpha_vals), len(beta_vals)))
     
-    # 参数访问辅助函数
     def set_parameters(alpha, beta):
         with torch.no_grad():
             for param, init_val, d1, d2 in zip(model.parameters(), initial_params, delta1, delta2):
@@ -125,13 +108,10 @@ def visualize_2d_loss_landscape(
         loss_grid = torch.load(data_path, map_location='cpu')
     else:
     
-        # 遍历整个参数空间
         for i, alpha in enumerate(tqdm.tqdm(alpha_vals, desc="Computing Loss Landscape")):
             for j, beta in enumerate(beta_vals):
-                # 设置当前参数
                 set_parameters(alpha, beta)
                 
-                # 计算损失
                 model.eval()
                 total_loss = 0.0
                 with torch.no_grad():
@@ -142,13 +122,11 @@ def visualize_2d_loss_landscape(
                         loss = criterion(outputs, labels)
                         total_loss += loss.item() * inputs.size(0)
                 
-                # 记录平均损失
                 loss_grid[i, j] = total_loss / len(dataloader.dataset)
 
         print("Data Saved")
         torch.save(loss_grid, data_path)
     
-    # 恢复初始参数
     set_parameters(0, 0)
     X, Y = np.meshgrid(alpha_vals, beta_vals)
     Z = loss_grid.T
@@ -174,19 +152,15 @@ def visualize_2d_loss_landscape(
 def display_images_horizontally(image_list, save_name):
     plt.clf()
     n = len(image_list)
-    # 创建一行n列的子图，调整尺寸和间距
     fig, axes = plt.subplots(1, n, figsize=(15, 5))
     
-    # 处理单张图的特殊情况（避免 axes 不是数组）
     if n == 1:
         axes = [axes]
     
-    # 遍历显示每张图
     for i, ax in enumerate(axes):
-        ax.imshow(image_list[i])  # 假设 image_list 中是 numpy 数组或 PIL 图像
-        ax.axis('off')  # 关闭坐标轴
+        ax.imshow(image_list[i]) 
+        ax.axis('off')
     
-    # 自动调整子图间距（可根据需求调整参数）
     plt.subplots_adjust(wspace=0.05, left=0.05, right=0.95)
     plt.savefig(save_name, dpi=500)
 
@@ -232,8 +206,7 @@ def test(model, test_loader, mode='adapted'):
     model.eval()
     correct = 0
     total = 0
-    
-    # 生成文本分类器
+
     text_inputs = torch.cat([clip.tokenize(f"a photo of a {c}") for c in test_loader.dataset.classes]).cuda()
     text_features = clip_model.encode_text(text_inputs).float()
     

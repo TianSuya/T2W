@@ -2,7 +2,7 @@
 import numpy as np
 import torch as th
 
-from Gpt.diffusion.gaussian_diffusion import GaussianDiffusion
+from T2W.diffusion.gaussian_diffusion import GaussianDiffusion
 
 
 def space_timesteps(num_timesteps, section_counts):

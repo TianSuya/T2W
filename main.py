@@ -19,19 +19,18 @@ from copy import deepcopy
 import torch
 import torch.utils.data
 from torch.utils.data import DataLoader
-from Gpt.diffusion import create_diffusion
-from Gpt.diffusion.timestep_sampler import UniformSampler
+from T2W.diffusion import create_diffusion
+from T2W.diffusion.timestep_sampler import UniformSampler
 
 from data_gen.cifar100.p_dataset import PDataset
-from Gpt.distributed import scaled_all_reduce
-from Gpt.models.transformer import Gpt
-from Gpt.meters import TrainMeter, TestMeter
-from Gpt.utils import setup_env, construct_loader, shuffle, update_lr, spread_losses, accumulate, requires_grad
-from Gpt.distributed import get_rank, get_world_size, is_main_proc, synchronize
+from T2W.distributed import scaled_all_reduce
+from T2W.models.transformer import Gpt
+from T2W.meters import TrainMeter, TestMeter
+from T2W.utils import setup_env, construct_loader, shuffle, update_lr, spread_losses, accumulate, requires_grad
+from T2W.distributed import get_rank, get_world_size, is_main_proc, synchronize
 # from Gpt.vis import VisMonitor
 # from Gpt.tasks import get
-from Gpt.download import find_model
-from data_gen.cifar100.clip_adapter import CLIPAdapter, CIFAR100Subset
+from data_gen.cifar100.generate_dataset import CLIPAdapter, CIFAR100Subset
 
 clip_model,_ = clip.load("ViT-B/32", device='cuda')
 
@@ -344,21 +343,6 @@ def train(cfg):
 
     # Set up the environment
     seed = setup_env(cfg)
-
-    # Instantiate visualization objects (they will be fully-initialized later on)
-    # vis_monitor = VisMonitor(
-    #     cfg.dataset.name,
-    #     None,
-    #     None,
-    #     net_mb_size=cfg.vis.net_mb_size_per_gpu,
-    #     vis_recursion=cfg.vis.recursive_probe,
-    #     vis_period=cfg.vis.freq,
-    #     delay_test_fn=True,
-    #     dvo_steps=cfg.vis.dvo_steps,
-    #     prompt_start_coeff=cfg.vis.prompt_start_coeff,
-    #     thresholding=cfg.sampling.thresholding,
-    #     param_range=None
-    # )
 
     train_dataset = PDataset(
         config_path='./data_gen/cifar100/train-natural.json',

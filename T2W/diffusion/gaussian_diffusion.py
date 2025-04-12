@@ -11,7 +11,7 @@ import numpy as np
 import torch as th
 import enum
 
-from Gpt.diffusion.diffusion_utils import mean_flat, normal_kl, continuous_gaussian_log_likelihood
+from T2W.diffusion.diffusion_utils import mean_flat, normal_kl, continuous_gaussian_log_likelihood
 
 
 class ModelMeanType(enum.Enum):

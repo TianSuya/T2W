@@ -1,5 +1,5 @@
-import Gpt.diffusion.gaussian_diffusion as gd
-from Gpt.diffusion.respace import SpacedDiffusion, space_timesteps
+import T2W.diffusion.gaussian_diffusion as gd
+from T2W.diffusion.respace import SpacedDiffusion, space_timesteps
 
 
 def create_diffusion(
