@@ -11,21 +11,6 @@ def flatten_pt(pt_data):
 MAX_VALUE = 0.150326207280159
 MIN_VALUE = -0.1498246192932129
 
-def fuse_features(embeddings):
-    # 计算全局平均向量
-    global_avg = torch.mean(embeddings, dim=0)
-
-    # 计算余弦相似度（假设向量已L2归一化）
-    embeddings_normalized = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-    global_avg_normalized = torch.nn.functional.normalize(global_avg.unsqueeze(0), p=2, dim=1)
-
-    # 计算相似度得分
-    scores = torch.mm(embeddings_normalized, global_avg_normalized.T).squeeze()
-    weights = torch.softmax(scores, dim=0)
-
-    # 加权平均
-    fused_vector = torch.sum(embeddings * weights.unsqueeze(1), dim=0)
-
 class PDataset(Dataset):
 
     def __init__(
