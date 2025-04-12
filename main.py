@@ -230,7 +230,6 @@ def train_epoch(
             _, _, x_start = run_diffusion_vlb(cfg, diffusion, model, timestep_sampler, batch_dict)
         real_data = batch_dict['p_data'].cuda()
         fake_data = x_start.detach()
-        # 计算判别器损失
         d_optim.zero_grad()
         d_real = discriminator(real_data)
         d_fake = discriminator(fake_data)
