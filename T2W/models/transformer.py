@@ -335,10 +335,10 @@ class FrequencyEmbedder(nn.Module):
         return embedded
 
 
-class Gpt(nn.Module):
+class T2W(nn.Module):
 
     """
-    The G.pt model.
+    The T2W (Text-to-Weight) model.
     """
 
     def __init__(
@@ -347,7 +347,7 @@ class Gpt(nn.Module):
         parameter_names,                    # A list of strings indicating the name of each layer in the input networks
         num_frequencies=128,                # number of frequencies sampled for embedding scalars
         max_freq_log2=20,                   # max log2 frequency for embedding scalars
-        predict_xstart=True,                # if True, G.pt predicts signal (False = predict noise)
+        predict_xstart=True,                # if True, T2W predicts signal (False = predict noise)
         absolute_loss_conditioning=False,   # if True, adds two extra input tokens indicating starting/target metrics
         **gpt_kwargs                        # Arguments for the Transformer model (depth, heads, etc.)
     ):
@@ -373,18 +373,18 @@ class Gpt(nn.Module):
         This function returns a few different lists which are used to construct the GPT model.
 
         input_parameter_sizes: A list that breaks-down the sizes of the different input vectors.
-        output_parameter_sizes: A list that breaks-down the sizes of the different vectors the G.pt model will output.
+        output_parameter_sizes: A list that breaks-down the sizes of the different vectors the T2W model will output.
         input_parameter_names: A list that contains string names for every individual input layer and scalar.
 
         For example, say we have a linear network with a (10, 784)-shape weight and a (10,)-shape bias, and we embed
         each input scalar into a 257-dimensional vector. Then this function might return the following:
 
         input_parameter_sizes: [[7840, 10], [7840, 10], [257], [257], [257], [257]]
-        output_parameter_sizes: [[7840, 10]]  # G.pt only outputs denoised parameters
+        output_parameter_sizes: [[7840, 10]]  # T2W only outputs denoised parameters
         input_parameter_names: ['weight', 'bias', 'weight', 'bias', 'timestep_embedding',
                                'loss_delta_embedding', 'target_loss_embedding', 'current_loss_embedding']
 
-        These lists are used by the GPT class above to determine how to split the input vector into different tokens.
+        These lists are used by the T2W class above to determine how to split the input vector into different tokens.
         """
         input_parameter_sizes = deepcopy(parameter_sizes)
         output_parameter_sizes = deepcopy(parameter_sizes)
@@ -398,7 +398,7 @@ class Gpt(nn.Module):
 
     def configure_optimizers(self, lr, wd, betas):
         """
-        Sets up the AdamW optimizer for G.pt (no weight decay on the positional embeddings or layer norm biases).
+        Sets up the AdamW optimizer for T2W (no weight decay on the positional embeddings or layer norm biases).
         """
         return GPT.configure_optimizers(self, lr, wd, betas)
 
@@ -423,25 +423,25 @@ class Gpt(nn.Module):
         """
         batch_size, num_sentences, feature_dim = embeddings.shape
         
-        # 1. 计算每个样本的全局平均向量 [batch_size, feature_dim]
+        # 1. Compute global average vector for each sample [batch_size, feature_dim]
         global_avg = torch.mean(embeddings, dim=1)
         
-        # 2. L2归一化（对特征维度归一化）
+        # 2. L2 normalization (normalize along feature dimension)
         embeddings_normalized = torch.nn.functional.normalize(embeddings, p=2, dim=2)  # [b, n, d]
         global_avg_normalized = torch.nn.functional.normalize(global_avg, p=2, dim=1)  # [b, d]
         
-        # 3. 计算相似度得分（批量矩阵乘法）
-        # 将 global_avg_normalized 扩展为 [batch_size, 1, feature_dim]
+        # 3. Compute similarity scores (batch matrix multiplication)
+        # Expand global_avg_normalized to [batch_size, 1, feature_dim]
         global_avg_expanded = global_avg_normalized.unsqueeze(1)  # [b, 1, d]
         
-        # 计算相似度得分：scores = einsum("bnd,bkd->bnk", embeddings, global_avg) → 取对角线
+        # Compute similarity scores: scores = einsum("bnd,bkd->bnk", embeddings, global_avg) -> take diagonal
         scores = torch.bmm(embeddings_normalized, global_avg_expanded.transpose(1,2))  # [b, n, 1]
         scores = scores.squeeze(-1)  # [batch_size, num_sentences]
         
-        # 4. 计算注意力权重（对每个样本的句子做softmax）
+        # 4. Compute attention weights (softmax over sentences for each sample)
         weights = torch.softmax(scores, dim=1)  # [b, n]
         
-        # 5. 加权平均（扩展权重维度后相乘）
+        # 5. Weighted average (expand weights dimension and multiply)
         weights_expanded = weights.unsqueeze(-1)  # [b, n, 1]
         fused_vector = torch.sum(embeddings * weights_expanded, dim=1)  # [b, d]
         
@@ -449,7 +449,7 @@ class Gpt(nn.Module):
 
     def forward(self, x, t, cond):
         """
-        Full G.pt forward pass.
+        Full T2W forward pass.
         ----------------------------------------------
         N = batch size
         D = number of parameters

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Script for training and evaluating G.pt models.
+Visualization script for T2W (Text-to-Weight) model.
+Part of the code was modified from repository https://github.com/wpeebles/G.pt.
 """
 try:
     import isaacgym
@@ -25,13 +26,13 @@ from pytorch_grad_cam.utils.image import show_cam_on_image
 import matplotlib.pyplot as plt
 from data_gen.cifar100.p_dataset import PDataset
 from T2W.distributed import scaled_all_reduce
-from T2W.models.transformer import Gpt
+from T2W.models.transformer import T2W as T2WModel
 import joblib
 from T2W.meters import TrainMeter, TestMeter
 from T2W.utils import setup_env, construct_loader, shuffle, update_lr, spread_losses, accumulate, requires_grad
 from T2W.distributed import get_rank, get_world_size, is_main_proc, synchronize
-# from Gpt.vis import VisMonitor
-# from Gpt.tasks import get
+# from T2W.vis import VisMonitor
+# from T2W.tasks import get
 from data_gen.cifar100.generate_dataset import CLIPAdapter, CIFAR100Subset
 import numpy as np
 from matplotlib.colors import Normalize
@@ -229,25 +230,26 @@ def test(model, test_loader, mode='adapted'):
 
     return acc
 
-def moduleify(Gpt_output, init_net, unnormalize_fn):
+def moduleify(t2w_output, init_net, unnormalize_fn):
     """
-    Gpt_output: (N, D) tensor (N = batch_size, D = number of parameters)
-    net_constructor: Function (should take no args/kwargs) that returns a randomly-initialized neural network
-                     with the appropriate architecture
-    unnormalize_fn: Function that takes a (N, D) tensor and "unnormalizes" it back to the original parameter space
+    Convert T2W output to neural network modules.
+    
+    Args:
+        t2w_output: (N, D) tensor (N = batch_size, D = number of parameters)
+        init_net: Template neural network with the appropriate architecture
+        unnormalize_fn: Function that takes a (N, D) tensor and "unnormalizes" it back to the original parameter space
 
-    Returns: A length-N list of nn.Module instances, where the i-th nn.Module has the parameters from Gpt_output[i].
-             If N = 1, then a single nn.Module is returned instead of a list.
+    Returns: A list of state_dicts, where the i-th state_dict has the parameters from t2w_output[i].
     """
-    Gpt_output = unnormalize_fn(Gpt_output)
-    num_nets = Gpt_output.size(0)
+    t2w_output = unnormalize_fn(t2w_output)
+    num_nets = t2w_output.size(0)
     net_instance = deepcopy(init_net)
     target_state_dict = net_instance.state_dict()
     parameter_names = target_state_dict.keys()
     parameter_sizes = [v.size() for v in target_state_dict.values()]
     parameter_chunks = [v.numel() for v in target_state_dict.values()]
 
-    parameters = torch.split(Gpt_output, parameter_chunks, dim=1)
+    parameters = torch.split(t2w_output, parameter_chunks, dim=1)
     state_dicts = []
     for i in range(num_nets):
         # Build a state dict from the generated parameters:
@@ -473,7 +475,7 @@ def eval_generate_model(
     accs = []
 
     for i in range(len(selected_classes_set)):
-        test_dataset = CIFAR100Subset("/data/bowen/data/cifar100", train=False, classes=selected_classes_set[i])
+        test_dataset = CIFAR100Subset("./data/cifar100", train=False, classes=selected_classes_set[i])
         test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=8)
         net = g_nets[i]
         acc = test(net.cuda(), test_loader, mode='adapted')
@@ -513,7 +515,7 @@ def eval_denoise_model(
         ds = []
 
         for i in range(len(selected_classes_set)):
-            test_dataset = CIFAR100Subset("/data/bowen/data/cifar100", train=False, classes=selected_classes_set[i])
+            test_dataset = CIFAR100Subset("./data/cifar100", train=False, classes=selected_classes_set[i])
             ds.append(test_dataset)
             test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=8)
             net = g_nets[i]
@@ -572,7 +574,7 @@ def vis_loss(g_nets, ds, x0_net_paths, device):
     text_features = g_nets['900'][0].encode_text(text_inputs)
 
     dataset = CIFAR100Subset(
-        root='/data/bowen/data/cifar100',
+        root='./data/cifar100',
         train=False,
         classes=selected_point[0]['selected_classes']
     )
@@ -633,7 +635,7 @@ def vis(cfg):
         openai_coeff=cfg.dataset.openai_coeff
     )
     # Construct the model and optimizer
-    model = Gpt(
+    model = T2WModel(
         parameter_sizes=train_dataset.parameter_sizes,
         parameter_names=train_dataset.parameter_names,
         predict_xstart=cfg.transformer.predict_xstart,
@@ -659,7 +661,7 @@ def vis(cfg):
     print(cur_device)
     model = model.cuda(device=cur_device)
 
-    G_path = '/data/bowen/Text2Weight/results/cifar100_classifier/checkpoints/best.pt'
+    G_path = './results/cifar100_classifier/checkpoints/best.pt'
     G_ckpt = torch.load(G_path, map_location=f"cuda:{cur_device}")
     G_ckpt = G_ckpt['G']
 

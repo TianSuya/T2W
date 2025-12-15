@@ -59,16 +59,6 @@ test:
   mb_size: 32
   use_ema: false
 
-wandb:
-  name: ${exp_name}
-  group: default
-  project: Gpt
-  entity: learn2learn
-  mode: online
-
-defaults:
-  - override hydra/job_logging: disabled
-
 hydra:
   output_subdir: null
   run:

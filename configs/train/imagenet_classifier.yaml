@@ -11,8 +11,8 @@ dataset:
   normalizer: openai
   openai_coeff: 1.646
   num_workers: 1
-  max: 0.150326207280159
-  min: -0.1498246192932129
+  max: 0.15
+  min: -0.15
 
 vis:
   freq: 20
@@ -57,17 +57,7 @@ train:
 test:
   freq: 10
   mb_size: 32
-  use_ema: false
-
-wandb:
-  name: ${exp_name}
-  group: default
-  project: Gpt
-  entity: learn2learn
-  mode: online
-
-defaults:
-  - override hydra/job_logging: disabled
+  use_ema: falseß
 
 hydra:
   output_subdir: null

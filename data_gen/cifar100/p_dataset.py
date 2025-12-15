@@ -22,7 +22,7 @@ class PDataset(Dataset):
         super().__init__()
         with open(config_path, 'r') as f:
             self.data = json.load(f)
-        self.parameter_sizes = [[16*512, 16],[512*16, 512]]
+        self.parameter_sizes = [[16*512, 16], [512*16, 512]]  # Two-layer weight parameters
         self.parameter_names = ['weight', 'bias', 'weight', 'bias']
         self.normalizer_name = normalizer_name
         self.openai_coeff = openai_coeff
@@ -33,16 +33,23 @@ class PDataset(Dataset):
     def __getitem__(self, index):
         now_data = self.data[index]
         sd = torch.load(now_data['path'], map_location='cpu')
-        # print(now_data['path'])
-        p_data = sd['clip_adapter']
-        p_data = flatten_pt(p_data)
+        
+        # Process original weights
+        original_weights = sd['clip_adapter']
+        p_data = flatten_pt(original_weights)
+        p_data = self.normalize(p_data)
+        
+        # Process permuted weights
+        permuted_weights = self.permute_layer_weights(original_weights)
+        p_data_permu = flatten_pt(permuted_weights)
+        p_data_permu = self.normalize(p_data_permu)
+
         text_features = torch.tensor(now_data['text_features'])
         selected_classes = now_data['selected_classes']
 
-        p_data = self.normalize(p_data)
-
         return {
             'p_data': p_data,
+            'p_data_permu': p_data_permu,  # Permuted weights for augmentation
             'index': now_data['index'],
             'text': text_features
         }
@@ -56,18 +63,17 @@ class PDataset(Dataset):
     def unnormalize(self, normalized_weights):
         return self.normalizer.unnormalize(normalized_weights)
     
-if __name__ == '__main__':
-    min_vals = 99
-    max_vals = -99
-    dataset = PDataset(
-        config_path='./train.json',
-    )
-    for a in dataset:
-        a = a['p_data']
-        print(a)
-        min_val = torch.min(a).item()
-        max_val = torch.max(a).item()
-        if min_val < min_vals: min_vals = min_val
-        if max_val > max_vals: max_vals = max_val
-    print(min_vals)
-    print(max_vals)        
+    def permute_layer_weights(self, weights_dict):
+
+        perm_dict = {k: v.clone() for k, v in weights_dict.items()}
+        layer1_out = perm_dict['linear1.weight'].shape[0]
+        
+        torch.manual_seed(hash(str(perm_dict['linear1.weight'][:2])) % 2**32)
+        perm = torch.randperm(layer1_out)
+        
+        perm_dict['linear1.weight'] = perm_dict['linear1.weight'][perm, :]
+        perm_dict['linear1.bias'] = perm_dict['linear1.bias'][perm]
+        perm_dict['linear2.weight'] = perm_dict['linear2.weight'][:, perm]
+        
+        return perm_dict
+   
